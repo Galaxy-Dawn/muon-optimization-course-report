@@ -1,0 +1,48 @@
+# LaTeX build products
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+comment.cut
+
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS metadata
+.DS_Store
+
+# Iterative figure previews kept locally during paper editing
+figures/figure2_preview.*
+figures/figure3_preview.*
+figures/figure2_rerun_proof.*
+figures/figure3_rerun_proof.*
+figures/figure2_preset_only.*
+figures/figure3_preset_only.*
+figures/figure2_preset_xy_only_v2.*
+figures/figure2_preset_xy_only_v3.*
+figures/figure2_preset_xy_only_v4.*
+figures/figure2_preset_xy_only_v6.*
+figures/figure2_preset_xy_only_v7.*
+figures/figure3_preset_xy_only_v2.*
+figures/figure3_preset_xy_only_v3.*
+figures/figure3_preset_xy_only_v4.*
+figures/figure3_preset_xy_only_v5.*
+figures/figure3_preset_xy_only_v6.*
+figures/figure3_preset_xy_only_v7.*
+figures/figure3_preset_xy_only_v8.*
+figures/*_composite.*
+figures/main_mechanism.png
+figures/main_mechanism_reorganized.*
+figures/mlp_*.png
+figures/ns_*.png
+figures/rms_alignment_shapes.png
+figures/training_*.png
+figures/weight_decay_control.png

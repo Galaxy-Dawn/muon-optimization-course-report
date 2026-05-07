@@ -1,0 +1,440 @@
+% main.tex
+% Double-column paper draft on Muon-inspired matrix optimization.
+
+\documentclass[sigconf,nonacm]{acmart}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{colortbl}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{hyperref}
+
+\settopmatter{authorsperrow=2}
+\newcommand{\vpara}[1]{\par\smallskip\noindent\textbf{#1.}}
+\definecolor{bestgreen}{RGB}{223,242,225}
+\definecolor{warnred}{RGB}{252,229,225}
+\newcommand{\bestcell}[1]{\cellcolor{bestgreen}{#1}}
+\newcommand{\warncell}[1]{\cellcolor{warnred}{#1}}
+\newtheorem{proposition}{Proposition}
+\newtheorem{lemma}{Lemma}
+\newtheorem{remark}{Remark}
+
+\title{Spectral-Norm Steepest Descent and Matrix Preconditioning: A Mechanistic Study Inspired by Muon Optimizers}
+
+\author{Gaorui Zhang}
+\affiliation{%
+  \institution{Zhejiang University}
+  \city{Hangzhou}
+  \country{China}}
+\email{gaoruizhang@zju.edu.cn}
+
+\begin{document}
+
+\begin{abstract}
+Muon-style optimizers update matrix-valued parameters by replacing a momentum matrix with its polar factor. This operation is often discussed together with diagonal adaptivity and curvature preconditioning, but it acts on a different mathematical object. We give a mechanistic analysis of this distinction. For the matrix quadratic objective $f(W)=\frac{1}{2}\|AWB-C\|_F^2$, the vectorized Hessian is $BB^\top\otimes A^\top A$, and the ideal left--right preconditioner reduces the effective Hessian to the identity. In contrast, the matrix-sign update used by Muon solves a spectral-norm constrained steepest-descent problem; it normalizes the singular values of the update rather than approximating an inverse Hessian. We further analyze three mechanisms that enter practical Muon variants after the spectral direction has been chosen: decoupled weight decay, update-RMS alignment across matrix shapes, and Newton--Schulz approximation of the matrix sign. Controlled diagnostics on matrix quadratics, synthetic scale checks, Newton--Schulz approximation, logistic regression, and a low-dimensional multilayer perceptron support the same interpretation. The evidence is deliberately diagnostic rather than benchmark-oriented: within these controlled settings, curvature preconditioning changes the objective spectrum, spectral update normalization changes the update spectrum, and stability scaling determines whether the resulting direction becomes a usable optimization step.
+\end{abstract}
+
+\maketitle
+
+\section{Introduction}
+Modern neural-network training relies on a small set of optimizer families. Stochastic gradient descent applies a scalar learning rate to all parameters. Adam and AdamW use diagonal estimates of first and second moments to scale coordinates independently \citep{kingma2014adam,loshchilov2019adamw}. Matrix-aware methods exploit the fact that many neural-network parameters are naturally stored as matrices. K-FAC and Shampoo use approximate curvature factors to define matrix preconditioners \citep{martens2015kfac,gupta2018shampoo}. Muon-style methods take a different route: they orthogonalize a matrix momentum and step along its polar factor \citep{kellerjordan2024muon}. Although all of these methods transform the raw gradient, they act on different mathematical objects.
+
+The central question is what a Muon update changes. If the polar step behaves as a matrix preconditioner, it should improve the spectrum of the objective Hessian. If it instead solves a first-order constrained problem, it should primarily alter the geometry of the update. Recent analyses of Muon scale-up also point to decoupled weight decay and per-parameter update-scale alignment as essential components \citep{liu2025moonlight,su2025muonchoice}. These observations suggest that the polar direction alone does not define the complete optimizer.
+
+The paper makes three contributions. First, we give a self-contained quadratic analysis that separates curvature preconditioning from spectral update normalization. Second, we derive three stabilizing mechanisms for Muon-style updates: a spectral-norm bound induced by decoupled weight decay, an RMS formula for matrix-sign updates across shapes, and the singular-value dynamics of Newton--Schulz polar approximation. Third, we organize experiments by mechanism rather than by optimizer ranking. The diagnostics include matrix quadratics, weight-decay and RMS-scale checks, Newton--Schulz approximation quality, fixed-hyperparameter classification runs, and a validation-selected learning-rate sweep. Across these settings, the robust conclusion is not that one optimizer dominates; it is that matrix preconditioning changes the objective spectrum, whereas Muon-style orthogonalization changes the update spectrum. Weight decay, RMS alignment, and approximation quality then determine how that spectral direction becomes a usable step. This is a mechanism claim, not a claim of universal optimizer superiority on large-scale neural-network training.
+
+The remainder of the paper is organized as follows. Section~2 reviews related optimizers and recent work on Muon scale-up. Section~3 develops the theory, moving from quadratic preconditioning to matrix-sign updates and their stability mechanisms. Section~4 presents the diagnostic experiments. Sections~5 and~6 discuss limitations and conclude.
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.70\textwidth]{figures/main_mechanism_user.png}
+    \caption{Mechanistic decomposition of matrix-aware optimization. Objective-spectrum preconditioning targets curvature geometry, update-spectrum normalization via $\operatorname{msign}(\cdot)$ targets step geometry, and practical usable steps depend on three stability mechanisms: decoupled weight decay, RMS scale alignment, and Newton--Schulz approximation quality.}
+    \Description{Closed block diagram separating objective-spectrum preconditioning, update-spectrum matrix-sign normalization, and stability mechanisms for practical matrix-aware optimization.}
+    \label{fig:main_mechanism}
+\end{figure*}
+
+\section{Related Work}
+\vpara{Diagonal adaptive methods} AdaGrad scales each coordinate by the accumulated magnitude of past gradients \citep{duchi2011adagrad}. Adam combines exponential moving averages of gradients and squared gradients, and AdamW decouples weight decay from the adaptive update \citep{kingma2014adam,loshchilov2019adamw}. These methods are computationally efficient, but their preconditioners are diagonal in the parameter basis. They correct coordinate-wise scale without modeling rotations of the local Hessian. Decoupled weight decay is particularly relevant in the present setting because it separates weight shrinkage from the update direction. This separation allows MuonW to be written as a contraction of the current matrix followed by a bounded spectral update, making AdamW both a baseline and a useful reference mechanism.
+
+\vpara{Matrix preconditioning} K-FAC approximates the Fisher or Gauss--Newton matrix by Kronecker factors and inverts the factors separately \citep{martens2015kfac}. Shampoo maintains positive-definite preconditioners along tensor dimensions \citep{gupta2018shampoo}. These algorithms implement curvature correction by changing the metric in which the loss is optimized. The quadratic model $f(W)=\frac12\|AWB-C\|_F^2$ used here is exactly Kronecker structured, so the ideal preconditioner can be written in closed form. The model therefore provides an oracle reference for curvature correction. This reference point permits a direct comparison with Muon-style steps, which need not transform the same quantity.
+
+\vpara{Norm-rescaled and orthogonalized updates} Bernstein and Newhouse view several optimizers as steepest descent under non-Euclidean update norms \citep{bernstein2024oldoptimizer}. Muon fits this perspective because it replaces a momentum matrix by its polar factor \citep{kellerjordan2024muon}. Kim and Oh analyze convergence when the polar factor is approximated by finitely many Newton--Schulz iterations \citep{kim2026convergence}. Newton--Muon adds an input-covariance right-preconditioner before the polar step \citep{du2026newtonmuon}, and Muon$^2$ adds an Adam-like second-moment preconditioner before orthogonalization \citep{liu2026muon2}. Moonlight and related discussions emphasize decoupled weight decay and update-RMS alignment across parameter shapes as practical scale-up mechanisms \citep{liu2025moonlight,su2025muonchoice}. Later work identifies maximum-logit growth as another potential instability \citep{su2025qkclip}. The present paper does not reproduce large-scale language-model training. Its contribution is to isolate, in controlled settings, which aspects of Muon follow from linear algebra and which remain empirical scale-up considerations.
+
+\section{Theory: Matrix Preconditioning and Spectral Updates}
+This section establishes the theoretical basis of the paper. We first recall how condition numbers control gradient descent on vector quadratics, then derive the Kronecker Hessian of a matrix quadratic objective. We next show that Muon-style matrix-sign updates solve a spectral-norm steepest-descent problem. Finally, we analyze three stabilizing mechanisms: decoupled weight decay, RMS scale alignment, and Newton--Schulz approximation.
+
+The analysis proceeds in stages. We first examine the behavior of an ideal matrix preconditioner under known curvature. We then show that the matrix sign solves a different constrained first-order problem. Finally, we add the scale and approximation mechanisms that convert the spectral direction into an optimizer step. The notation below separates these objects deliberately: $H_W$ denotes objective curvature, $G$ or $M_t$ denotes a gradient or momentum matrix, and $\Phi_t$ denotes the actual update direction after normalization or scaling.
+
+We use two condition-number conventions. For $M\succ0$,
+\begin{equation}
+  \kappa(M)=\frac{\lambda_{\max}(M)}{\lambda_{\min}(M)}.
+\end{equation}
+For a full-rank rectangular matrix $A$,
+\begin{equation}
+  \kappa(A)=\frac{\sigma_{\max}(A)}{\sigma_{\min}(A)}.
+\end{equation}
+
+\subsection{Quadratic objectives and matrix preconditioning}
+\vpara{Vector quadratics} Consider
+\begin{equation}
+  f(x)=\frac{1}{2}(x-x^\star)^\top H(x-x^\star), \qquad H\succ 0.
+\end{equation}
+Let $e_t=x_t-x^\star$. Since $\nabla f(x_t)=He_t$, gradient descent gives $e_{t+1}=(I-\eta H)e_t$.
+
+\begin{proposition}[Condition-number controlled convergence]\label{prop:gd}
+If $0<\eta<2/\lambda_{\max}(H)$, then gradient descent converges linearly. The optimal fixed step size
+\begin{equation}
+  \eta^\star=\frac{2}{\lambda_{\max}(H)+\lambda_{\min}(H)}
+\end{equation}
+yields
+\begin{equation}
+  \|e_t\|_2 \leq \left(\frac{\kappa(H)-1}{\kappa(H)+1}\right)^t\|e_0\|_2 .
+\end{equation}
+For the preconditioned update $x_{t+1}=x_t-\eta P\nabla f(x_t)$, choosing $P=H^{-1}$ gives $e_{t+1}=(1-\eta)e_t$, so $\eta=1$ gives one-step convergence.
+\end{proposition}
+
+\begin{proof}
+Diagonalize $H=Q\Lambda Q^\top$. In coordinates $y_t=Q^\top e_t$, the $i$th component evolves as $y_{t+1}^{(i)}=(1-\eta\lambda_i)y_t^{(i)}$. Since $H$ is symmetric, $I-\eta H$ is also symmetric and its Euclidean operator norm equals its spectral radius. Thus
+\begin{equation}
+  \|e_t\|_2 \leq \rho(\eta)^t\|e_0\|_2,\qquad
+  \rho(\eta)=\max_i |1-\eta\lambda_i| .
+\end{equation}
+The condition $0<\eta<2/\lambda_{\max}(H)$ makes every $|1-\eta\lambda_i|<1$, hence gives linear convergence. The optimal fixed step balances the two endpoint errors,
+\begin{equation}
+  1-\eta\lambda_{\min}(H)=\eta\lambda_{\max}(H)-1,
+\end{equation}
+which gives $\eta^\star=2/(\lambda_{\max}(H)+\lambda_{\min}(H))$ and
+\begin{equation}
+  \rho(\eta^\star)=
+  \frac{\lambda_{\max}(H)-\lambda_{\min}(H)}
+       {\lambda_{\max}(H)+\lambda_{\min}(H)}
+  =\frac{\kappa(H)-1}{\kappa(H)+1}.
+\end{equation}
+The preconditioned claim follows from substituting $P=H^{-1}$ into the recurrence $e_{t+1}=(I-\eta PH)e_t$. See \citet{nocedal2006numerical} for the standard analysis.
+\end{proof}
+
+The conclusion is not only that large condition numbers degrade gradient-descent convergence. It also identifies the target of preconditioning: a successful curvature preconditioner makes the eigenvalues of the effective Hessian more uniform. This criterion motivates the matrix analysis below.
+
+\vpara{Matrix quadratics} Let $W\in\mathbb{R}^{m\times n}$ and consider
+\begin{equation}\label{eq:matrix_obj}
+  f(W)=\frac{1}{2}\|AWB-C\|_F^2,
+\end{equation}
+where $A\in\mathbb{R}^{p\times m}$ has full column rank, $B\in\mathbb{R}^{n\times q}$ has full row rank, and $C=AW^\star B$ for some $W^\star$. Define $E_t=W_t-W^\star$.
+
+\begin{proposition}[Kronecker Hessian]\label{prop:matrix_hessian}
+For~\eqref{eq:matrix_obj},
+\begin{equation}
+  \nabla_W f(W_t)=A^\top A E_t BB^\top.
+\end{equation}
+Represented in vectorized coordinates, the Hessian is
+\begin{equation}
+  H_W=BB^\top\otimes A^\top A,
+\end{equation}
+with condition number $\kappa(H_W)=\kappa(A)^2\kappa(B)^2$.
+\end{proposition}
+
+\begin{proof}
+Let $R(W)=AWB-C$. For any perturbation $\Delta$,
+\begin{align}
+  df(W)[\Delta]&=\langle R(W),A\Delta B\rangle_F \\
+  &=\langle A^\top R(W)B^\top,\Delta\rangle_F .
+\end{align}
+Hence $\nabla_W f(W)=A^\top(AWB-C)B^\top$. Using $C=AW^\star B$ gives the stated gradient. Vectorizing and using $\operatorname{vec}(LXR)=(R^\top\otimes L)\operatorname{vec}(X)$ gives the Hessian. Eigenvalues of a Kronecker product are pairwise products of factor eigenvalues \citep{horn2012matrix}, giving the condition number.
+\end{proof}
+
+These assumptions make the minimizer unique. If $AWB=0$, then left-multiplying by $(A^\top A)^{-1}A^\top$ and right-multiplying by $B^\top(BB^\top)^{-1}$ gives
+\begin{equation}
+  (A^\top A)^{-1}A^\top(AWB)B^\top(BB^\top)^{-1}=W=0 .
+\end{equation}
+Hence the map $W\mapsto AWB$ is injective. This property is used in the experiments: because $W^\star$ is identifiable in the realizable case $C=AW^\star B$, both objective error and parameter error are unambiguous. In the non-realizable least-squares case the Hessian is the same, but the optimum generally has nonzero residual; we do not study that setting here. The Kronecker form also shows why a diagonal method can be insufficient. If the singular vectors of $A$ or $B$ are rotated relative to the coordinate axes, then the Hessian in vectorized coordinates contains couplings that cannot be removed by scaling coordinates independently.
+
+\vpara{Left--right preconditioning} The matrix objective admits an ideal left--right preconditioner.
+
+\begin{proposition}[Ideal left--right preconditioning]\label{prop:lr}
+Set $P_L=(A^\top A)^{-1}$ and $P_R=(BB^\top)^{-1}$. The update
+\begin{equation}
+  W_{t+1}=W_t-\eta P_L\nabla_W f(W_t)P_R
+\end{equation}
+satisfies
+\begin{equation}
+  E_{t+1}=(1-\eta)E_t.
+\end{equation}
+Thus $\eta=1$ gives one-step convergence.
+\end{proposition}
+
+\begin{proof}
+Substitute Proposition~\ref{prop:matrix_hessian} into the update:
+\begin{align}
+E_{t+1}
+&=E_t-\eta(A^\top A)^{-1}(A^\top A E_t BB^\top)(BB^\top)^{-1}\\
+&=(1-\eta)E_t .
+\end{align}
+\end{proof}
+
+Proposition~\ref{prop:lr} shows that ideal matrix preconditioning acts on the objective spectrum: in vectorized form, $(P_R^\top\otimes P_L)(BB^\top\otimes A^\top A)=I\otimes I$. Equivalently, it turns the effective Hessian of the quadratic into the identity. This provides a stringent benchmark against which spectral updates can be compared: in neural networks generally neither $A^\top A$ nor $BB^\top$ is known exactly, and the local curvature changes during training. The result therefore serves as a mathematical reference rather than as a practical optimization method.
+
+\subsection{Matrix-sign updates as spectral-norm steepest descent}
+For a rank-$r$ matrix $G\in\mathbb{R}^{m\times n}$, write its compact SVD as $G=U_r\Sigma_rV_r^\top$. Define $\operatorname{msign}(G)=U_rV_r^\top$.
+
+\begin{proposition}[Spectral-norm steepest descent]\label{prop:msign}
+For $G\neq 0$ and $\eta>0$, one solution of
+\begin{equation}
+  \min_{\|\Delta W\|_2\leq \eta}\langle G,\Delta W\rangle_F
+\end{equation}
+is
+\begin{equation}
+  \Delta W^\star=-\eta U_rV_r^\top=-\eta\operatorname{msign}(G).
+\end{equation}
+The minimizer need not be unique when $G$ is rectangular or rank deficient. If $G=0$, every feasible $\Delta W$ has the same first-order objective value; in implementations we set $\operatorname{msign}(0)=0$.
+\end{proposition}
+
+\begin{proof}
+Write $\Delta W=-\eta\Phi$ with $\|\Phi\|_2\leq 1$. The original problem is therefore equivalent to maximizing $\langle G,\Phi\rangle_F$ over the spectral-norm unit ball. By von Neumann's trace inequality \citep{horn2012matrix},
+\begin{equation}
+  \langle G,\Phi\rangle_F\leq \sum_{i=1}^r \sigma_i(G)\sigma_i(\Phi)\leq \sum_{i=1}^r\sigma_i(G)=\|G\|_*.
+\end{equation}
+One equality-achieving feasible point is $\Phi=U_rV_r^\top$, because $\|U_rV_r^\top\|_2=1$ and it aligns the left and right singular subspaces of $G$. Hence $\Delta W^\star=-\eta U_rV_r^\top$ minimizes the first-order model; see also \citet{bernstein2024oldoptimizer}.
+\end{proof}
+
+This result characterizes the direction of a Muon update, but it does not determine the scale or stability properties of the resulting optimizer. The polar factor preserves singular vectors and discards singular values; it is therefore not a Hessian inverse and does not replace $H_W$ by a better-conditioned effective Hessian. It also explains a phenomenon observed in the matrix-quadratic experiment: even on an isotropic objective, the matrix sign may converge slowly if the error matrix has a highly nonuniform singular-value profile. Gradient descent follows the singular values of the error; $\operatorname{msign}$ discards them.
+
+\subsection{Decoupled weight decay and spectral-norm control}
+Practical Muon variants commonly combine the polar direction with decoupled weight decay, in analogy with AdamW. Let
+\begin{equation}
+  W_{t+1}=(1-\eta\lambda)W_t-\eta\Phi_t,
+\end{equation}
+where $\Phi_t$ denotes the full direction before multiplication by $\eta$; it may denote the unscaled polar direction $\operatorname{msign}(M_t)$ or a scaled polar direction such as $s_t\operatorname{msign}(M_t)$.
+
+\begin{proposition}[Spectral-norm control under decay]\label{prop:decay}
+Assume $0\leq \eta\lambda\leq 1$ and $\|\Phi_t\|_2\leq S$ for all $t$. Then
+\begin{equation}
+  \|W_t\|_2\leq \max\left\{\|W_0\|_2,\frac{S}{\lambda}\right\}
+\end{equation}
+for all $t$ when $\lambda>0$.
+\end{proposition}
+
+\begin{proof}
+Let $R=\max\{\|W_0\|_2,S/\lambda\}$. We prove by induction that $\|W_t\|_2\leq R$. The claim is true at $t=0$. If it holds at time $t$, then by the triangle inequality,
+\begin{align}
+\|W_{t+1}\|_2
+&\leq (1-\eta\lambda)\|W_t\|_2+\eta\|\Phi_t\|_2\\
+&\leq (1-\eta\lambda)R+\eta S.
+\end{align}
+Since $R\geq S/\lambda$, we have $S\leq\lambda R$. Therefore
+\begin{equation}
+(1-\eta\lambda)R+\eta S\leq (1-\eta\lambda)R+\eta\lambda R=R.
+\end{equation}
+This completes the induction.
+\end{proof}
+
+For unscaled Muon, $S=1$ because $\|\operatorname{msign}(M_t)\|_2=1$. For scaled Muon with $\Phi_t=s_t\operatorname{msign}(M_t)$, one may take $S=\sup_t s_t$ if this quantity is finite. Thus, in the presence of bounded-spectral-norm updates, weight decay provides a direct mechanism for controlling weight growth in addition to its regularization role. Although elementary, the bound identifies a deterministic role for weight decay in polar-update methods. Without decay, bounded update directions can still accumulate into large weight matrices over many steps. With decay, the recurrence has a stable radius proportional to the update spectral norm and inversely proportional to the decay coefficient. This bound controls the growth of the weights; it does not itself prove loss decrease or convergence to a minimizer. It motivates including AdamW and MuonW, rather than only Adam and decay-free Muon, in the classification diagnostics.
+
+\subsection{Update RMS alignment across matrix shapes}
+The spectral norm controls the largest singular value, but the elementwise RMS of a matrix-sign update depends on the matrix shape. For $\Phi=\operatorname{msign}(M)$ with $M\in\mathbb{R}^{m\times n}$ and rank $r$,
+\begin{equation}
+  \|\Phi\|_F^2=r,
+\end{equation}
+since $\Phi$ has $r$ singular values equal to one.
+
+\begin{proposition}[RMS of a matrix-sign update]\label{prop:rms}
+Let $\Phi=\operatorname{msign}(M)$ for a rank-$r$ matrix $M\in\mathbb{R}^{m\times n}$. Define $\operatorname{RMS}(\Phi)=\|\Phi\|_F/\sqrt{mn}$. Then
+\begin{equation}
+  \operatorname{RMS}(\Phi)=\sqrt{\frac{r}{mn}}.
+\end{equation}
+If $M$ is full rank, then $\operatorname{RMS}(\Phi)=1/\sqrt{\max(m,n)}$.
+\end{proposition}
+
+\begin{proof}
+Let $M=U_r\Sigma_rV_r^\top$ be the compact SVD. Then $\Phi=U_rV_r^\top$. Since $U_r^\top U_r=I_r$ and $V_r^\top V_r=I_r$,
+\begin{align}
+\|\Phi\|_F^2
+&=\operatorname{tr}(\Phi^\top\Phi)\\
+&=\operatorname{tr}(V_rU_r^\top U_rV_r^\top)\\
+&=\operatorname{tr}(V_rV_r^\top)=r.
+\end{align}
+Dividing by $mn$ gives $\operatorname{RMS}(\Phi)=\sqrt{r/(mn)}$. If $M$ has full rank $r=\min(m,n)$, then $\sqrt{r/(mn)}=1/\sqrt{\max(m,n)}$.
+\end{proof}
+
+This proposition explains why Muon updates require shape-dependent scaling. Multiplying $\operatorname{msign}(M)$ by $\sqrt{\max(m,n)}$ makes the update RMS approximately one for full-rank matrices. This identity gives the algebraic basis for update-RMS alignment in scalable Muon implementations \citep{liu2025moonlight,su2025muonchoice}. The result also shows that a fixed learning rate can induce different elementwise step sizes across layers: a tall matrix and a square matrix have different raw matrix-sign RMS, even when both updates have unit spectral norm.
+
+\subsection{Newton--Schulz approximation of the matrix sign}
+Exact SVD-based computation of the matrix sign is expensive. Muon implementations approximate the polar factor through Newton--Schulz iterations. Consider the polynomial iteration
+\begin{equation}\label{eq:ns}
+  X_{k+1}=aX_k+bX_kX_k^\top X_k+cX_k(X_k^\top X_k)^2 .
+\end{equation}
+
+\begin{lemma}[Singular-value dynamics]\label{lem:ns}
+Let $X_k$ have compact SVD $U\Sigma_kV^\top$ and define
+\begin{equation}
+  p(s)=as+bs^3+cs^5 .
+\end{equation}
+Then the iteration~\eqref{eq:ns} satisfies
+\begin{equation}
+  X_{k+1}=U p(\Sigma_k)V^\top,
+\end{equation}
+where $p(\Sigma_k)$ applies $p$ to each diagonal entry of $\Sigma_k$. If $p(\sigma_i)\geq 0$ for all singular values, the singular vectors are preserved and
+\begin{equation}
+  \sigma_{i,k+1}=p(\sigma_{i,k}).
+\end{equation}
+In general, the singular values are $|p(\sigma_{i,k})|$, with possible sign flips absorbed into the singular vectors.
+\end{lemma}
+
+\begin{proof}
+Substitute the compact SVD of $X_k$ into~\eqref{eq:ns}. The products appearing in the cubic and quintic terms are
+\begin{equation}
+  X_kX_k^\top=U\Sigma_k^2U^\top,\qquad
+  X_k^\top X_k=V\Sigma_k^2V^\top .
+\end{equation}
+Using the orthonormality of the compact singular vectors,
+\begin{align}
+  X_kX_k^\top X_k &= U\Sigma_k^3V^\top,\\
+  X_k(X_k^\top X_k)^2 &= U\Sigma_k^5V^\top .
+\end{align}
+Therefore
+\begin{equation}
+  X_{k+1}=U(a\Sigma_k+b\Sigma_k^3+c\Sigma_k^5)V^\top
+  =U p(\Sigma_k)V^\top .
+\end{equation}
+If every $p(\sigma_i)$ is nonnegative, this is already a compact SVD with the same singular vectors. A negative $p(\sigma_i)$ can be absorbed into the sign of the corresponding singular vector, leaving singular value $|p(\sigma_i)|$. Zero singular directions remain zero because $p(0)=0$.
+\end{proof}
+
+With coefficients and normalization chosen so that $p$ moves the relevant singular-value interval toward one, Newton--Schulz approximates the matrix sign by pushing singular values toward one while keeping singular vectors fixed. Approximation quality depends on the initial singular-value spread and the number of iterations, motivating the diagnostic in Section~\ref{sec:ns_exp}. In practical Muon implementations, the number of Newton--Schulz steps is a compute-quality trade-off. Too few steps leave singular values far from one; too many steps allocate computation to approximating a direction whose benefit may be limited by noise, curvature variation, or scale mismatch. The experiments therefore report both alignment and orthogonality error rather than only final task accuracy.
+
+\section{Experiments}
+The experiments are designed to isolate the mechanisms analyzed in Section~3. They should be read as controlled diagnostics rather than as tuned benchmarks. Synthetic experiments use deterministic full-batch updates. Classification experiments report means and standard deviations over five train--test splits.
+
+\subsection{Experimental setup}
+\vpara{Optimizers} We compare three method families. The first consists of first-order baselines: GD or SGD, Adam, and AdamW. The second consists of matrix-preconditioned baselines available for synthetic quadratics: diagonal preconditioning and ideal left--right preconditioning. The third consists of Muon-style variants: Muon, MuonW with decoupled decay, RMS-MuonW with shape-dependent RMS scaling, and Newton-MuonW with input-covariance right-preconditioning. Matrix-specific updates are applied only to weight matrices; in the Muon family, bias vectors are updated by plain gradient steps. This convention follows common Muon implementations, although it limits direct comparability with Adam and AdamW, which also adapt bias vectors.
+
+\vpara{Metrics} For matrix quadratics, we report iterations to a fixed tolerance and mark nonconvergence within the budget as $>5000$. For the decay and RMS diagnostics, we report spectral norms and update RMS. For Newton--Schulz approximation, we report alignment with the exact SVD polar factor, orthogonality error, and singular-value spread. For classification diagnostics, we report validation and test accuracy, representative training curves, maximum logits, and final weight spectral norms.
+
+\vpara{Protocol} The synthetic experiments are deterministic sanity checks of the corresponding algebraic statements. For classification, we report two complementary protocols. The fixed-hyperparameter protocol uses a single transparent setting across five random splits and is interpreted qualitatively. The validation-selected protocol splits the data into train, validation, and test sets; fits the feature standardizer on the training split only; selects a learning rate per method from a fixed grid using validation accuracy; and reports the held-out test accuracy. This second protocol checks that the qualitative mechanism claims are not artifacts of a single learning-rate choice. The selected methods isolate specific mechanisms: Adam versus AdamW tests decoupled decay in a diagonal adaptive method; Muon versus MuonW tests the same decay in a spectral update; RMS-MuonW tests shape-dependent scale alignment; and Newton-MuonW introduces a right covariance factor before orthogonalization. Tables report means and standard deviations over five splits, whereas curves show representative seeds to visualize optimization dynamics.
+
+\vpara{Claim scope} The assumptions and experiments support different levels of conclusion. The quadratic propositions are exact statements under full-rank, realizable least-squares assumptions. The matrix-quadratic experiment checks those statements in a setting where the Kronecker Hessian is known and the ideal preconditioner is available. The decay, RMS, and Newton--Schulz diagnostics verify isolated algebraic mechanisms. The \textsc{Digits} experiments only test whether these mechanisms leave measurable traces in small full-batch classification problems; they do not establish optimizer rankings for large neural networks, minibatch training, language models, or wall-clock efficiency.
+
+\subsection{Matrix quadratic diagnostics}
+We evaluate $f(W)=\frac12\|AWB-C\|_F^2$ with $5\times5$ factors and controlled condition numbers $\kappa(A)=\kappa(B)\in\{1,3,10\}$. Both axis-aligned and rotated factors are considered. Table~\ref{tab:matrix_diag} reports the number of iterations required to reach tolerance $10^{-8}$ under a budget of $5000$ iterations; Figure~\ref{fig:synthetic_diagnostics}A visualizes the same pattern on a log scale.
+
+\begin{table}[t]
+    \centering
+    \caption{Matrix-quadratic convergence diagnostics. Each row uses $5\times5$ factors with the indicated rotation setting and condition number, and each method entry reports iterations to tolerance $10^{-8}$ under a budget of $5000$. Boldface marks the row-wise minimum iteration count, with ties retained. The table shows that ideal left--right preconditioning removes the Kronecker curvature exactly, whereas diagonal preconditioning loses this property under rotated spectra and scaled matrix-sign updates do not act as Hessian inverses.}
+    \label{tab:matrix_diag}
+    \input{tables/matrix_diagnostics_table.tex}
+\end{table}
+
+The results match the theoretical predictions. Ideal left--right preconditioning reaches the optimum in one step. Diagonal preconditioning is reliable when the spectrum is axis aligned, but it deteriorates under rotations; entries marked $>5000$ either did not reach tolerance within the budget or diverged numerically. Scaled matrix-sign updates do not remove the Hessian condition number. Even when $\kappa_H=1$, they may converge slowly because they discard the singular values of the error matrix instead of following the Euclidean gradient. This observation clarifies the scope of the spectral-norm theorem. The theorem identifies the steepest direction for a fixed spectral-norm budget, whereas the Euclidean gradient is the steepest direction for a fixed Frobenius-norm budget. On isotropic quadratics, changing the update norm can therefore slow convergence.
+
+\subsection{Decay and RMS scaling ablations}
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.98\textwidth]{figures/figure2_preset_xy_only_v8.pdf}
+    \caption{Synthetic mechanism diagnostics. (A) Matrix quadratics separate curvature preconditioning from update-spectrum normalization. (B) Decoupled decay controls spectral-norm growth under bounded updates. (C) Raw matrix-sign RMS is shape dependent, while $\sqrt{\max(m,n)}$ scaling aligns update RMS. (D) Newton--Schulz orthogonality error increases with condition number at fixed iteration budget.}
+    \Description{Four-panel synthetic diagnostics covering matrix-quadratic convergence, decay-based norm control, RMS alignment across shapes, and Newton-Schulz approximation quality.}
+    \label{fig:synthetic_diagnostics}
+\end{figure*}
+
+Proposition~\ref{prop:decay} predicts that decoupled decay bounds the spectral norm of the weights when the update direction has bounded spectral norm. Proposition~\ref{prop:rms} predicts that the raw matrix-sign RMS scales as $1/\sqrt{\max(m,n)}$ for full-rank matrices. Tables~\ref{tab:decay_small} and~\ref{tab:rms_small} report the corresponding checks. Figure~\ref{fig:synthetic_diagnostics}B--C shows the same conclusions visually: adversarial polar updates approach but do not exceed the theoretical decay radius, and shape scaling restores unit RMS across matrix shapes.
+
+\subsection{Newton--Schulz approximation quality}\label{sec:ns_exp}
+We compare finite Newton--Schulz approximations with the exact SVD polar factor. Matrices are $32\times32$ with prescribed condition number. Alignment is the Frobenius cosine with the exact polar factor, orthogonality error is $\|X^\top X-I\|_F/\sqrt{n}$, and singular-value spread measures the remaining variation in the approximate polar factor. Table~\ref{tab:ns_small} and Figure~\ref{fig:synthetic_diagnostics}D show that additional steps improve alignment and orthogonality, whereas ill-conditioned matrices require more iterations. The experiment uses the standard cubic Newton--Schulz iteration; optimization of polynomial coefficients is left to future work.
+
+\begin{table}[t]
+    \centering
+    \caption{Weight-decay control under bounded spectral updates. Random and adversarial polar-update sequences are compared against the theoretical radius $S/\lambda$ from Proposition~\ref{prop:decay}. Boldface marks the tightest finite control case, where the adversarial final norm nearly reaches the decay-imposed bound.}
+    \label{tab:decay_small}
+    \input{tables/weight_decay_table.tex}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{RMS alignment across matrix shapes. Raw matrix-sign updates follow the theoretical $1/\sqrt{\max(m,n)}$ scaling for full-rank matrices, so equal spectral norm does not imply equal elementwise RMS. Boldface highlights that multiplying by $\sqrt{\max(m,n)}$ aligns all tested shapes to unit update RMS.}
+    \label{tab:rms_small}
+    \input{tables/rms_alignment_table.tex}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{Newton--Schulz approximation diagnostics. Alignment is the Frobenius cosine with the exact SVD polar factor, orthogonality error is $\|X^\top X-I\|_F/\sqrt{n}$, and SV spread measures residual singular-value variation. Boldface marks the best entry within each condition-number block, showing that more Newton--Schulz steps improve approximation quality while higher condition numbers remain harder.}
+    \label{tab:ns_small}
+    \input{tables/ns_approx_table.tex}
+\end{table}
+
+The decay and RMS diagnostics address complementary quantities. Decay controls the norm of the weights, whereas RMS scaling controls the norm of the update. A polar direction without decay can accumulate over many steps, while a decayed polar direction without shape scaling can still induce layer-dependent update RMS. For this reason, the MLP diagnostic separates Muon, MuonW, RMS-MuonW, and Newton-MuonW.
+
+\subsection{Classification diagnostics on \textsc{Digits}}
+We use the \textsc{Digits} dataset from \textsc{scikit-learn}, which contains $1,797$ examples with $64$ features. Features are standardized using statistics fitted on the training split. Logistic regression uses full-batch softmax cross-entropy for $100$ iterations. The MLP uses architecture $64\to32\to10$ with ReLU activation and is trained for $30$ epochs. Tables~\ref{tab:digits_fixed_small}--\ref{tab:mlp_stability_small} report fixed-hyperparameter accuracy, validation-selected accuracy, learning-rate selection, and MLP stability. AdamW is included as the standard decoupled-decay baseline and as the closest diagonal analogue of MuonW.
+
+In logistic regression, RMS-MuonW performs best under the fixed learning-rate setting, whereas unscaled Muon variants are more sensitive to the chosen step scale. This result should not be interpreted as evidence of intrinsic optimizer superiority; it indicates that shape-dependent scaling can substantially change the effective elementwise step size. To separate mechanism from a single hyperparameter choice, the validation-selected protocol repeats both classification tasks with train, validation, and test splits and method-specific learning-rate grids. In logistic regression, Muon and RMS-MuonW both reach $96.00\%$ test accuracy, but RMS-MuonW uses a much smaller selected learning rate. In the MLP, MuonW obtains the highest mean test accuracy ($96.56\%$), while Newton-MuonW obtains the most favorable logit control among the Muon-style variants. These classification results support the weaker conclusion that scale and stability choices materially affect Muon-style steps; they do not show that a particular variant should dominate after broader tuning or at larger scale.
+
+\begin{table}[t]
+    \centering
+    \caption{Fixed-protocol test accuracy on \textsc{Digits} logistic regression over five stratified splits. The protocol uses a single transparent learning-rate setting rather than validation tuning, so the table is intended as a mechanism diagnostic rather than a benchmark leaderboard. Boldface marks the highest mean test accuracy.}
+    \label{tab:digits_fixed_small}
+    \input{tables/digits_acc_table.tex}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{Fixed-protocol test accuracy on the \textsc{Digits} MLP over five stratified splits. The architecture is $64\to32\to10$ with ReLU activations and full-batch training for $30$ epochs. Boldface marks the highest mean test accuracy under this fixed setting.}
+    \label{tab:mlp_fixed_small}
+    \input{tables/mlp_acc_table.tex}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{Validation-selected learning-rate sweep on \textsc{Digits}. For each task and optimizer, the learning rate is selected on a validation split and the reported test accuracy is evaluated on a held-out test split. Boldface marks the best validation accuracy, best test accuracy, and largest positive test gain over AdamW within each task block; ties are bolded together.}
+    \label{tab:classification_sweep_small}
+    \setlength{\tabcolsep}{1.8pt}
+    \scriptsize
+    \input{tables/classification_sweep_table.tex}
+\end{table}
+
+\begin{table}[t]
+    \centering
+    \caption{MLP stability diagnostics under the fixed protocol. Max logit captures output-scale growth, while $\|W_1\|_2$ and $\|W_2\|_2$ report final spectral norms of the two trainable weight matrices. Boldface marks the lowest value in each stability column; lower values indicate more conservative fixed-protocol dynamics, not necessarily higher accuracy.}
+    \label{tab:mlp_stability_small}
+    \input{tables/mlp_stability_table.tex}
+\end{table}
+
+\begin{figure*}[t]
+    \centering
+    \includegraphics[width=0.98\textwidth]{figures/figure3_preset_xy_only_v9.pdf}
+    \caption{Classification diagnostics on \textsc{Digits}. (A) Validation-selected test accuracy for logistic regression and MLP. (B) Accuracy gain versus MLP maximum logit (marker size enlarged for readability). (C) Representative logistic-regression training-loss trajectories. (D) Representative MLP maximum-logit trajectories. Curves use seed 42; aggregate statistics are reported in tables.}
+    \Description{Four-panel classification diagnostics with grouped-bar accuracy comparison, accuracy-logit tradeoff scatter, logistic-regression loss curves, and MLP max-logit trajectories.}
+    \label{fig:classification_diagnostics}
+\end{figure*}
+
+\section{Discussion and Limitations}
+The analysis separates three mechanisms that are often conflated. Matrix preconditioning modifies the effective Hessian and can remove ill-conditioning on exactly solvable quadratics. The matrix-sign update modifies the singular values of the step and solves a spectral-norm constrained steepest-descent problem. Practical Muon-style training then depends on stability mechanisms: decoupled weight decay controls weight growth, RMS alignment removes shape-dependent update scale, and Newton--Schulz iterations approximate the polar factor efficiently.
+
+\vpara{Scope of conclusions} The strongest conclusions are the algebraic ones: the Kronecker Hessian, ideal left--right preconditioner, spectral-norm steepest-descent characterization, decay bound, RMS identity, and Newton--Schulz singular-value dynamics follow from the stated assumptions. The synthetic diagnostics support these mechanisms under controlled finite-dimensional settings. The classification diagnostics provide only transfer evidence: the same mechanisms affect accuracy, logits, and spectral norms on \textsc{Digits}, but they do not prove large-scale training gains.
+
+\vpara{Implications} The diagnostics caution against treating Muon orthogonalization as a drop-in curvature preconditioner. On the quadratic model, a true left--right preconditioner removes the Hessian condition number, while the matrix sign changes the norm geometry of the update. On the classification tasks, the validation-selected sweep shows that RMS scaling changes the effective step scale by construction, but its accuracy and stability effects depend on learning-rate selection. Decoupled decay and covariance-assisted variants therefore play different roles from the polar direction itself.
+
+\vpara{Limitations} The experiments are low-dimensional, deterministic, and full-batch by construction. We do not evaluate language models, minibatch stochasticity, distributed communication, wall-clock efficiency, or attention-specific mechanisms such as QK-Clip. The Newton-MuonW experiments use oracle full-batch covariances. The scripts are intended to diagnose update geometry, not to provide tuned optimizer benchmarks. The learning-rate sweep is intentionally small and should be read as a robustness check, not as a full hyperparameter study. All experiment scripts set BLAS thread counts to one for reproducible CPU execution. The scaled matrix-sign update used in the experiments is also not identical to the fixed-radius spectral-norm step in Proposition~\ref{prop:msign}. The scaling improves numerical comparability, but it changes the step norm from $\eta$ to $\eta s_t$. Accordingly, the experiments evaluate the polar direction and its stabilizers rather than directly verifying the unscaled theorem.
+
+\vpara{Future work} A more comprehensive empirical study would evaluate the same optimizer families in Moonlight-style settings under validation-based hyperparameter tuning and learning-rate sweeps. Such a study should track weight RMS, update RMS, spectral norms, maximum logits, and wall-clock cost, and should include minibatch stochasticity and larger matrix layers. A natural theoretical direction is to combine spectral-norm constrained updates with approximate curvature factors, thereby connecting Shampoo-style preconditioning with Muon-style orthogonalization.
+
+\vpara{Code availability} Source code, experiment scripts, generated tables, raw CSV outputs, and the LaTeX source for this course report are publicly available at \url{https://github.com/Galaxy-Dawn/muon-optimization-course-report}.
+
+\section{Conclusion}
+Matrix preconditioning and Muon-style orthogonal updates address different mathematical objects. Full preconditioning can reduce the effective Hessian of a quadratic objective to the identity when the curvature factors are known. The matrix-sign update instead solves a spectral-norm steepest-descent problem and flattens update singular values. Decoupled weight decay, RMS alignment, and Newton--Schulz approximation are not merely implementation details; they are mechanisms that convert the spectral direction into a stable update rule. The controlled experiments support this separation, while also showing that optimizer rankings in the tested classification settings are sensitive to step-size selection and stability scaling. These distinctions clarify both the potential and the limits of Muon-style optimizers as matrix-aware first-order methods.
+
+\begin{acks}
+This work was conducted as part of a graduate course on optimization.
+\end{acks}
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+\appendix
+\section{Reproducibility Statement}
+The supplementary package contains scripts for all tables and figures, together with raw CSV outputs in the \texttt{results/} directory. The experiment README lists the exact commands. For reproducibility on CPU-only environments, the scripts set non-interactive plotting backends and use deterministic full-batch updates. Classification tables report five stratified splits. Feature standardization is fitted only on training data in both fixed-hyperparameter and validation-selected protocols. The validation-selected classification table is generated by the learning-rate sweep script in \texttt{experiments/}; table files are regenerated from CSV outputs by \texttt{write\_tables.py}.
+
+\section{Use of Large Language Models}
+Large language models were used for language editing and organization. The authors checked the mathematical derivations, code, and experimental results.
+
+\end{document}
