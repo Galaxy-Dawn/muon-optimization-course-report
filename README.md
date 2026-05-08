@@ -51,7 +51,7 @@ The experiments are controlled diagnostics for a course report. They are not lar
 └── ACM-Reference-Format.bst         # ACM bibliography style
 ```
 
-The course submission code archive contains only `README.md`, `requirements.txt`, and `experiments/`. The full GitHub repository also keeps generated CSV files, LaTeX tables, figures, and the compiled report.
+The course submission archive mirrors the reproducibility materials in this repository: report source, compiled PDF, scripts, raw CSV outputs, LaTeX tables, final figure assets, bibliography, and README files. Local build logs, Python caches, and intermediate editing notes are excluded.
 
 ## Experiment map
 
@@ -66,7 +66,7 @@ The course submission code archive contains only `README.md`, `requirements.txt`
 | `digits_mlp.py` | Runs full-batch MLP diagnostics comparing Adam/AdamW with Muon-style variants. | `results/digits_mlp_results.csv`, `results/digits_mlp_stability.csv` |
 | `classification_lr_sweep.py` | Runs a small validation-selected learning-rate sweep for classification diagnostics. | `results/classification_lr_sweep_raw.csv`, `results/classification_lr_sweep_summary.csv` |
 | `write_tables.py` | Regenerates LaTeX tables from CSV outputs. | `tables/*.tex` |
-| `reorganize_figures_tables.py` | Builds composite paper figures with `pubfig` and rewrites selected table fragments. | `figures/*composite*.pdf`, `figures/*composite*.png` |
+| `reorganize_figures_tables.py` | Builds composite paper figures with `pubfig` and rewrites selected table fragments. | final composite figure files under `figures/` |
 
 ## Setup
 

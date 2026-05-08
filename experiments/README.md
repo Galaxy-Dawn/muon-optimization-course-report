@@ -73,7 +73,7 @@ Run `write_tables.py` after the CSV-producing scripts. Run `reorganize_figures_t
 | `results/classification_lr_sweep_raw.csv` | `classification_lr_sweep.py` | Per-split validation-selected classification results. |
 | `results/classification_lr_sweep_summary.csv` | `classification_lr_sweep.py` | Aggregated validation-selected classification table input. |
 | `tables/*.tex` | `write_tables.py`, selected experiment scripts | LaTeX table fragments used by `main.tex`. |
-| `figures/*.pdf`, `figures/*.png` | Plotting scripts and `reorganize_figures_tables.py` | Figure assets used by the report. |
+| `figures/` | Plotting scripts and `reorganize_figures_tables.py` | Figure assets generated for the report. The repository keeps only the final paper figures after cleanup. |
 
 ## Protocol details
 
