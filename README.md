@@ -1,6 +1,6 @@
 # Muon Optimization Course Report
 
-This repository contains the source files and scripts for a graduate course report on Muon-style matrix optimization.
+This repository contains the code, data outputs, figures, tables, and LaTeX source for a graduate course report on Muon-style matrix optimization.
 
 Report title:
 
@@ -12,46 +12,65 @@ Author:
 Zhejiang University  
 gaoruizhang@zju.edu.cn
 
-## Overview
+## What this report studies
 
-The report studies a focused optimization question: Muon-style matrix-sign updates and matrix preconditioners both transform matrix-valued gradients, but they do not act on the same mathematical object.
+Muon-style optimizers and matrix preconditioners both transform matrix-valued gradients. The report asks whether these transformations act on the same mathematical object.
 
-The report separates three ideas:
+The short answer is no. The report separates:
 
-- objective-spectrum preconditioning, which changes curvature geometry;
-- update-spectrum normalization, which changes the singular values of the update direction;
-- practical stability mechanisms, including decoupled weight decay, update-RMS alignment, and Newton-Schulz approximation quality.
+- **Objective-spectrum preconditioning**: left-right matrix preconditioners can change the Hessian spectrum of a quadratic objective.
+- **Update-spectrum normalization**: the matrix-sign or polar step changes the singular values of the update direction.
+- **Step-stability mechanisms**: decoupled weight decay, update-RMS alignment, and Newton-Schulz approximation quality determine whether the spectral direction becomes a usable optimizer step.
 
-The experiments are small controlled diagnostics for a course report. They are not intended as a large-scale optimizer benchmark.
+The experiments are controlled diagnostics for a course report. They are not large-scale optimizer benchmarks.
 
-## Repository layout
+## Repository contents
 
 ```text
 .
-├── main.tex                     # Course report source
-├── main.pdf                     # Compiled report
-├── references.bib               # Bibliography
-├── requirements.txt             # Python dependencies
-├── experiments/                 # Scripts for reproducing diagnostics
-├── results/                     # Raw CSV outputs
-├── tables/                      # LaTeX tables generated from CSV files
-├── figures/                     # Final figures used by the report
-├── acmart.cls                   # ACM-style LaTeX class copy
-└── ACM-Reference-Format.bst     # ACM bibliography style
+├── main.tex                         # Course report source
+├── main.pdf                         # Compiled report
+├── references.bib                   # Bibliography
+├── requirements.txt                 # Python dependencies
+├── experiments/                     # Reproducibility scripts
+│   ├── README.md                    # Script-level run guide
+│   ├── matrix_quadratic_diagnostics.py
+│   ├── weight_decay_control.py
+│   ├── rms_alignment_shapes.py
+│   ├── ns_approx_quality.py
+│   ├── finite_ns_training.py
+│   ├── digits_logreg.py
+│   ├── digits_mlp.py
+│   ├── classification_lr_sweep.py
+│   ├── write_tables.py
+│   └── reorganize_figures_tables.py
+├── results/                         # Raw CSV outputs
+├── tables/                          # LaTeX table fragments
+├── figures/                         # Final paper figures
+├── acmart.cls                       # Local ACM class copy
+└── ACM-Reference-Format.bst         # ACM bibliography style
 ```
 
-## What is included
+The course submission code archive contains only `README.md`, `requirements.txt`, and `experiments/`. The full GitHub repository also keeps generated CSV files, LaTeX tables, figures, and the compiled report.
 
-- Matrix-quadratic diagnostics for objective-spectrum preconditioning.
-- Decoupled weight-decay checks under bounded spectral updates.
-- Numerical exact-SVD checks of matrix-sign RMS across matrix shapes.
-- Newton-Schulz approximation diagnostics.
-- Full-batch logistic-regression and MLP diagnostics on `sklearn` Digits.
-- LaTeX source, generated tables, final figures, and raw CSV outputs.
+## Experiment map
+
+| Script | Purpose | Main outputs |
+|---|---|---|
+| `matrix_quadratic_diagnostics.py` | Tests GD, diagonal preconditioning, ideal left-right preconditioning, and scaled matrix-sign updates on realizable matrix quadratics. | `results/matrix_quadratic_diagnostics.csv`, `results/matrix_quadratic_final_diagnostics.csv`, matrix diagnostic tables |
+| `weight_decay_control.py` | Checks the spectral-norm bound induced by decoupled weight decay under bounded polar updates. | `results/weight_decay_control.csv`, weight-decay plot |
+| `rms_alignment_shapes.py` | Verifies the exact-SVD identity for matrix-sign RMS across rectangular shapes. | `results/rms_alignment_shapes.csv`, RMS table and plot |
+| `ns_approx_quality.py` | Measures finite Newton-Schulz approximation quality against exact SVD polar factors. | `results/ns_approx_quality.csv`, Newton-Schulz plot |
+| `finite_ns_training.py` | Inserts finite Newton-Schulz polar approximation into a fixed full-batch Digits MLP training loop. | `results/finite_ns_training_raw.csv`, `results/finite_ns_training_summary.csv`, finite-NS table |
+| `digits_logreg.py` | Runs full-batch logistic-regression diagnostics on scikit-learn Digits. | `results/digits_logreg_results.csv`, loss and accuracy curves |
+| `digits_mlp.py` | Runs full-batch MLP diagnostics comparing Adam/AdamW with Muon-style variants. | `results/digits_mlp_results.csv`, `results/digits_mlp_stability.csv` |
+| `classification_lr_sweep.py` | Runs a small validation-selected learning-rate sweep for classification diagnostics. | `results/classification_lr_sweep_raw.csv`, `results/classification_lr_sweep_summary.csv` |
+| `write_tables.py` | Regenerates LaTeX tables from CSV outputs. | `tables/*.tex` |
+| `reorganize_figures_tables.py` | Builds composite paper figures with `pubfig` and rewrites selected table fragments. | `figures/*composite*.pdf`, `figures/*composite*.png` |
 
 ## Setup
 
-Use Python 3.10+:
+Use Python 3.10 or newer.
 
 ```bash
 python -m venv .venv
@@ -66,48 +85,60 @@ Dependencies:
 - `scikit-learn`
 - `pubfig`
 
-## Reproduce results
+The scripts create `results/`, `tables/`, and `figures/` if these directories do not already exist.
 
-Run commands from the repository root:
+## Reproduce the experiments
+
+Run from the repository root.
 
 ```bash
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/matrix_quadratic_diagnostics.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/weight_decay_control.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/rms_alignment_shapes.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/ns_approx_quality.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/digits_logreg.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/digits_mlp.py
-OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 python experiments/classification_lr_sweep.py
+export OMP_NUM_THREADS=1
+export OPENBLAS_NUM_THREADS=1
+export MKL_NUM_THREADS=1
+
+python experiments/matrix_quadratic_diagnostics.py
+python experiments/weight_decay_control.py
+python experiments/rms_alignment_shapes.py
+python experiments/ns_approx_quality.py
+python experiments/finite_ns_training.py
+python experiments/digits_logreg.py
+python experiments/digits_mlp.py
+python experiments/classification_lr_sweep.py
 python experiments/write_tables.py
 python experiments/reorganize_figures_tables.py
 ```
 
-Outputs are written to:
-
-- `results/` for raw CSV files;
-- `tables/` for LaTeX table files;
-- `figures/` for generated figures. Figure 2 and Figure 3 are regenerated by `experiments/reorganize_figures_tables.py` using the installed `pubfig` package.
-
-The BLAS thread variables keep the small SVD-heavy experiments reproducible and avoid CPU oversubscription.
+The BLAS thread variables keep the small SVD-heavy experiments from oversubscribing CPU threads. They also make local runtime more predictable.
 
 ## Build the report
 
-Compile with pdfLaTeX:
+The report uses an ACM-style LaTeX layout. Compile with pdfLaTeX:
 
 ```bash
 pdflatex -interaction=nonstopmode -halt-on-error main.tex
+bibtex main
+pdflatex -interaction=nonstopmode -halt-on-error main.tex
 pdflatex -interaction=nonstopmode -halt-on-error main.tex
 ```
 
-The output file is:
+The compiled file is `main.pdf`.
 
-```text
-main.pdf
-```
+## Scope and limitations
 
-## Scope
+The synthetic experiments directly test the algebraic mechanisms in the report. The Digits experiments are small full-batch sanity checks. They do not establish optimizer rankings for large neural-network training, minibatch stochasticity, distributed training, language models, or wall-clock efficiency.
 
-This repository is for course-report reproducibility. The experiments are deliberately low-dimensional and diagnostic. They do not claim that any optimizer variant is universally better for large neural-network training, language models, minibatch stochasticity, or wall-clock efficiency.
+`Cov-MuonW` is an oracle diagnostic. It uses full-batch covariance information and exact SVD polar factors, so it should not be read as a scalable optimizer implementation.
+
+Muon-family MLP runs update bias vectors with fixed-step gradient descent. Adam and AdamW update biases adaptively. The report treats this as an implementation-level comparison confound.
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| `ModuleNotFoundError: pubfig` | `pubfig` is not installed in the active environment. | Run `pip install -r requirements.txt`. |
+| Very slow SVD-heavy scripts | BLAS uses too many threads for small matrices. | Set `OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1`. |
+| `reorganize_figures_tables.py` cannot find CSV files | The raw experiment scripts were not run first. | Run all experiment scripts before generating composite figures. |
+| LaTeX cannot find `acmart.cls` or `ACM-Reference-Format.bst` | The local template files were not copied. | Use the full repository, or keep `acmart.cls` and `ACM-Reference-Format.bst` beside `main.tex`. |
 
 ## License
 
