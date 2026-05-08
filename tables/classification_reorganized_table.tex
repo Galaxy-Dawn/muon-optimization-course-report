@@ -1,0 +1,23 @@
+\footnotesize
+\setlength{\tabcolsep}{2.7pt}
+\begin{tabular}{llrrrrr}
+\toprule
+Task & Method & Fixed test & Val test & $\Delta$ & LR & Stability \\
+\midrule
+LogReg & GD & $93.83 \pm 0.75$ & $94.67 \pm 1.28$ & $-0.78$ & 0.2 & -- \\
+LogReg & Adam & $95.17 \pm 0.76$ & $95.33 \pm 0.89$ & $-0.11$ & 0.03 & -- \\
+LogReg & AdamW & $95.17 \pm 0.76$ & $95.44 \pm 0.94$ & $+0.00$ & 0.03 & -- \\
+LogReg & Muon & $92.78 \pm 1.04$ & \bestcell{\textbf{$96.00 \pm 0.38$}} & $+0.56$ & 1 & -- \\
+LogReg & MuonW & $92.72 \pm 1.09$ & $95.61 \pm 0.21$ & $+0.17$ & 1 & -- \\
+LogReg & RMS-MuonW & \bestcell{\textbf{$96.11 \pm 0.93$}} & \bestcell{\textbf{$96.00 \pm 0.38$}} & $+0.56$ & 0.005 & -- \\
+LogReg & Cov-MuonW & $94.67 \pm 0.90$ & $95.28 \pm 0.25$ & $-0.17$ & 1 & -- \\
+\midrule
+MLP & SGD & $62.56 \pm 4.72$ & $90.22 \pm 1.22$ & $-5.72$ & 0.2 & 7.4 \\
+MLP & Adam & $95.17 \pm 0.52$ & $95.94 \pm 0.78$ & $+0.00$ & 0.03 & 23.2 \\
+MLP & AdamW & $95.17 \pm 0.52$ & $95.94 \pm 0.78$ & $+0.00$ & 0.03 & 23.1 \\
+MLP & Muon & $94.67 \pm 0.59$ & $95.94 \pm 0.33$ & $+0.00$ & 3 & 21.0 \\
+MLP & MuonW & $94.94 \pm 0.92$ & \bestcell{\textbf{$96.56 \pm 0.22$}} & $+0.61$ & 3 & \bestcell{13.8} \\
+MLP & RMS-MuonW & \bestcell{\textbf{$95.72 \pm 0.48$}} & $95.50 \pm 0.37$ & $-0.44$ & 0.01 & \warncell{81.5} \\
+MLP & Cov-MuonW & $95.67 \pm 1.17$ & $96.17 \pm 0.54$ & $+0.22$ & 3 & \bestcell{10.3} \\
+\bottomrule
+\end{tabular}

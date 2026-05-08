@@ -1,0 +1,22 @@
+\footnotesize
+\begin{tabular}{llrrrr}
+\toprule
+Task & Method & Val. acc. & Test acc. & $\Delta$ AdamW & LR \\
+\midrule
+LogReg & SGD & $94.56 \pm 0.84$ & $94.67 \pm 1.28$ & $-0.78$ & 0.2 \\
+LogReg & Adam & $95.33 \pm 0.92$ & $95.33 \pm 0.89$ & $-0.11$ & 0.03 \\
+LogReg & AdamW & $95.33 \pm 0.92$ & $95.44 \pm 0.94$ & $+0.00$ & 0.03 \\
+LogReg & Muon & $95.89 \pm 0.92$ & $96.00 \pm 0.38$ & $+0.56$ & 1 \\
+LogReg & MuonW & $95.61 \pm 0.75$ & $95.61 \pm 0.21$ & $+0.17$ & 1 \\
+LogReg & RMS-MuonW & $96.22 \pm 0.69$ & $96.00 \pm 0.38$ & $+0.56$ & 0.005 \\
+LogReg & Cov-MuonW & $95.06 \pm 0.81$ & $95.28 \pm 0.25$ & $-0.17$ & 1 \\
+\midrule
+MLP & SGD & $88.44 \pm 0.97$ & $90.22 \pm 1.22$ & $-5.72$ & 0.2 \\
+MLP & Adam & $95.56 \pm 0.68$ & $95.94 \pm 0.78$ & $+0.00$ & 0.03 \\
+MLP & AdamW & $95.56 \pm 0.68$ & $95.94 \pm 0.78$ & $+0.00$ & 0.03 \\
+MLP & Muon & $95.72 \pm 0.84$ & $95.94 \pm 0.33$ & $+0.00$ & 3 \\
+MLP & MuonW & $96.33 \pm 0.81$ & $96.56 \pm 0.22$ & $+0.61$ & 3 \\
+MLP & RMS-MuonW & $95.33 \pm 0.57$ & $95.50 \pm 0.37$ & $-0.44$ & 0.01 \\
+MLP & Cov-MuonW & $96.44 \pm 0.27$ & $96.17 \pm 0.54$ & $+0.22$ & 3 \\
+\bottomrule
+\end{tabular}

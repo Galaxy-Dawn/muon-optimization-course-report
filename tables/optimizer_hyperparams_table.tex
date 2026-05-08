@@ -1,0 +1,17 @@
+\scriptsize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{p{0.25\textwidth}p{0.68\textwidth}}
+\toprule
+Component & Hyperparameters \\
+\midrule
+Adam / AdamW & $\beta_1=0.9$, $\beta_2=0.999$, $\epsilon=10^{-8}$. AdamW applies decoupled weight decay $0.01$ to weight matrices. \\
+Muon momentum & Exponential momentum coefficient $0.9$ for matrix gradients in Muon, MuonW, RMS-MuonW, Cov-MuonW, and finite-NS MuonW. \\
+Covariance damping & Cov-MuonW uses oracle full-batch covariance inverses with damping $10^{-4}I$ before the exact SVD polar factor. This is a covariance-preconditioned diagnostic, not a finite Newton--Schulz implementation. \\
+Fixed LogReg protocol & $100$ full-batch iterations. GD lr $0.1$; Adam/AdamW lr $0.01$; Muon/MuonW/Cov-MuonW base lr $0.1$ with gradient-norm scaling; RMS-MuonW lr $0.01$ with shape scaling. \\
+Fixed MLP protocol & Architecture $64\to32\to10$, ReLU, $30$ full-batch epochs. SGD lr $0.05$; Adam/AdamW lr $0.01$; Muon lr $1.0$; MuonW lr $1.0$; RMS-MuonW lr $0.02$; Cov-MuonW lr $1.0$. \\
+Finite-NS MLP protocol & Same MLP, splits, bias policy, momentum $0.9$, weight decay $0.01$, base lr $1.0$, and $30$ full-batch epochs as MuonW. The polar factor is approximated inside training by cubic Newton--Schulz steps $K\in\{1,3,5,8\}$ after Frobenius normalization; metrics report final test accuracy, train loss, mean layer-update orthogonality error, and wall-clock runtime per run. \\
+Bias policy & For Muon-family MLP runs, matrix weights use the Muon-style update but biases use plain gradient descent with fixed bias lr $0.1$. Adam and AdamW update biases adaptively. This is an implementation-level confound for optimizer comparisons. \\
+Validation LR grids & SGD: $\{0.02,0.05,0.1,0.2\}$; Adam/AdamW: $\{0.003,0.01,0.03\}$; Muon/MuonW/Cov-MuonW: $\{0.3,1,3\}$; RMS-MuonW: $\{0.005,0.01,0.02,0.05\}$. \\
+Matrix quadratic protocol & Dimension $5\times5$, seed $0$, budget $5000$. GD and diagonal preconditioning use the minimax fixed step for the corresponding quadratic operator; LR uses $\eta=1$; scaled matrix sign uses base lr $0.02$. Convergence uses relative gap $f(W_t)/f(W_0)<10^{-8}$. \\
+\bottomrule
+\end{tabular}
